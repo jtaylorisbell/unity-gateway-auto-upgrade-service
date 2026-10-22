@@ -1,0 +1,11 @@
+.databricks/
+.venv/
+dist/
+build/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+# Not committed: uv records the index it resolved from, which may be a private mirror.
+uv.lock

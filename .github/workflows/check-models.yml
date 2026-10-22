@@ -1,0 +1,57 @@
+# Daily: look for newer servable system.ai models and open (or update) one PR that bumps them.
+name: Check for new models
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC token, exchanged for a Databricks token via workload identity federation
+
+concurrency:
+  group: check-models
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_AUTH_TYPE: github-oidc
+      # Probes go in the staging schema.
+      BUNDLE_VAR_catalog: ${{ vars.CATALOG }}
+      BUNDLE_VAR_schema: ${{ vars.SCHEMA }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Find newer servable models
+        id: check
+        run: uv run check-models --summary-file "$RUNNER_TEMP/pr-body.md"
+
+      # PRs opened with the default GITHUB_TOKEN don't trigger other workflows, so deploy.yml wouldn't test them.
+      - name: Get a GitHub App token
+        if: steps.check.outputs.changed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.MODEL_BOT_APP_ID }}
+          private-key: ${{ secrets.MODEL_BOT_PRIVATE_KEY }}
+
+      # Reuses one branch, so an unmerged PR gets updated instead of a new one opening every day.
+      # Reviewers come from .github/CODEOWNERS.
+      - name: Open or update the PR
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: bot/model-upgrades
+          delete-branch: true
+          add-paths: resources/model_services.yml
+          commit-message: Upgrade Unity Gateway model services to newer system.ai models
+          title: Upgrade Unity Gateway model services
+          body-path: ${{ runner.temp }}/pr-body.md
+          labels: model-upgrade

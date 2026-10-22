@@ -1,0 +1,44 @@
+# Pull requests deploy to staging and smoke test every model service. Merges to main do the same against prod.
+name: Deploy model services
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC token, exchanged for a Databricks token via workload identity federation
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run ruff check . && uv run ruff format --check .
+      - run: uv run pytest
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'prod' || 'staging' }}
+    # One deploy per target at a time; PRs queue for staging and the last one deployed wins.
+    concurrency:
+      group: deploy-${{ github.event_name == 'push' && 'prod' || 'staging' }}
+    env:
+      TARGET: ${{ github.event_name == 'push' && 'prod' || 'staging' }}
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_AUTH_TYPE: github-oidc
+      BUNDLE_VAR_catalog: ${{ vars.CATALOG }}
+      BUNDLE_VAR_schema: ${{ vars.SCHEMA }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: databricks/setup-cli@main
+      # No --auto-approve: a deploy that would delete a model service should stop, not proceed.
+      - run: databricks bundle deploy -t "$TARGET"
+      - run: |
+          databricks bundle summary -t "$TARGET" -o json > "$RUNNER_TEMP/summary.json"
+          uv run smoke-test "$RUNNER_TEMP/summary.json"

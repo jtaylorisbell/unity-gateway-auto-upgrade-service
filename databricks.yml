@@ -1,0 +1,57 @@
+# Unity Gateway model services, one per model class, each pinned to a system.ai model.
+# The check-models GitHub workflow opens a PR when a newer servable version is available; merging deploys it.
+#
+# Nothing workspace-specific lives in this repo. The workspace comes from DATABRICKS_CONFIG_PROFILE or
+# DATABRICKS_HOST, and the catalog and schema from BUNDLE_VAR_catalog and BUNDLE_VAR_schema. Locally they're in
+# .env (see .env.example); in CI they come from the GitHub environment's variables.
+bundle:
+  name: unity_gateway_auto_upgrade
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Catalog that holds the model services. Set with BUNDLE_VAR_catalog.
+  schema:
+    description: Schema that holds the model services. Must already exist. Set with BUNDLE_VAR_schema.
+  grants:
+    description: >-
+      Grants on every model service, e.g. EXECUTE for the groups that should call them. This is the complete
+      list: grants made outside the bundle are removed on the next deploy. Use account-level principals;
+      workspace-local groups can't be used in Unity Catalog grants.
+    type: complex
+  prevent_destroy:
+    description: Refuse deploys that would delete a model service (and break its callers).
+    default: true
+
+targets:
+  # Personal sandbox. Model service names aren't prefixed in development mode, so use a schema of your own.
+  dev:
+    mode: development
+    default: true
+    variables:
+      prevent_destroy: false
+      grants:
+        - principal: ${workspace.current_user.userName}
+          privileges: [EXECUTE]
+
+  # Pull requests deploy here and get smoke tested; check-models also creates its throwaway probes here.
+  staging:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      grants:
+        - principal: ${workspace.current_user.userName}
+          privileges: [EXECUTE]
+
+  # Merges to main deploy here.
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      grants:
+        - principal: ${workspace.current_user.userName}
+          privileges: [EXECUTE]

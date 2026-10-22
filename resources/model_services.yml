@@ -1,0 +1,95 @@
+# One Unity Gateway model service per model class. To add a class, copy a block and pin any model in the family.
+# check-models treats the run of numbers in the pinned name as the version (databricks-gpt-[6-1]-sol) and opens a PR
+# when system.ai has a higher one that answers requests. Deleting a block deletes the service, which
+# prevent_destroy blocks outside dev.
+resources:
+  model_services:
+    opus:
+      parent: schemas/${var.catalog}.${var.schema}
+      model_service_id: opus
+      comment: Managed by the unity_gateway_auto_upgrade bundle. Changes made outside git are reverted on deploy.
+      grants: ${var.grants}
+      lifecycle:
+        prevent_destroy: ${var.prevent_destroy}
+      config:
+        routing:
+          destinations:
+            - name: primary
+              destination_type: DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL
+              pay_per_token_config:
+                model: models/system.ai.databricks-claude-opus-5-5
+
+    sonnet:
+      parent: schemas/${var.catalog}.${var.schema}
+      model_service_id: sonnet
+      comment: Managed by the unity_gateway_auto_upgrade bundle. Changes made outside git are reverted on deploy.
+      grants: ${var.grants}
+      lifecycle:
+        prevent_destroy: ${var.prevent_destroy}
+      config:
+        routing:
+          destinations:
+            - name: primary
+              destination_type: DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL
+              pay_per_token_config:
+                model: models/system.ai.databricks-claude-sonnet-5-5
+
+    haiku:
+      parent: schemas/${var.catalog}.${var.schema}
+      model_service_id: haiku
+      comment: Managed by the unity_gateway_auto_upgrade bundle. Changes made outside git are reverted on deploy.
+      grants: ${var.grants}
+      lifecycle:
+        prevent_destroy: ${var.prevent_destroy}
+      config:
+        routing:
+          destinations:
+            - name: primary
+              destination_type: DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL
+              pay_per_token_config:
+                model: models/system.ai.databricks-claude-haiku-5-5
+
+    luna:
+      parent: schemas/${var.catalog}.${var.schema}
+      model_service_id: luna
+      comment: Managed by the unity_gateway_auto_upgrade bundle. Changes made outside git are reverted on deploy.
+      grants: ${var.grants}
+      lifecycle:
+        prevent_destroy: ${var.prevent_destroy}
+      config:
+        routing:
+          destinations:
+            - name: primary
+              destination_type: DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL
+              pay_per_token_config:
+                model: models/system.ai.databricks-gpt-6-luna
+
+    terra:
+      parent: schemas/${var.catalog}.${var.schema}
+      model_service_id: terra
+      comment: Managed by the unity_gateway_auto_upgrade bundle. Changes made outside git are reverted on deploy.
+      grants: ${var.grants}
+      lifecycle:
+        prevent_destroy: ${var.prevent_destroy}
+      config:
+        routing:
+          destinations:
+            - name: primary
+              destination_type: DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL
+              pay_per_token_config:
+                model: models/system.ai.databricks-gpt-5-6-terra
+
+    sol:
+      parent: schemas/${var.catalog}.${var.schema}
+      model_service_id: sol
+      comment: Managed by the unity_gateway_auto_upgrade bundle. Changes made outside git are reverted on deploy.
+      grants: ${var.grants}
+      lifecycle:
+        prevent_destroy: ${var.prevent_destroy}
+      config:
+        routing:
+          destinations:
+            - name: primary
+              destination_type: DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL
+              pay_per_token_config:
+                model: models/system.ai.databricks-gpt-6-1-sol
