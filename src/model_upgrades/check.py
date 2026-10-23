@@ -5,9 +5,11 @@ in $GITHUB_OUTPUT when run under GitHub Actions.
 """
 
 import argparse
+import json
 import logging
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,14 +36,10 @@ class Report:
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--resources", type=Path, default=Path("resources/model_services.yml"))
-    # Defaults to the schema the bundle deploys to, which these same variables set.
-    catalog, schema = os.environ.get("BUNDLE_VAR_catalog"), os.environ.get("BUNDLE_VAR_schema")
-    bundle_schema = f"{catalog}.{schema}" if catalog and schema else None
+    parser.add_argument("-t", "--target", help="Bundle target whose schema holds the probes. Defaults to dev.")
     parser.add_argument(
         "--probe-schema",
-        default=bundle_schema,
-        required=bundle_schema is None,
-        help="catalog.schema where throwaway probe services can be created. Defaults to the bundle's schema.",
+        help="catalog.schema where throwaway probe services can be created. Defaults to the target's schema.",
     )
     parser.add_argument("--summary-file", type=Path, help="Where to write the Markdown summary.")
     args = parser.parse_args()
@@ -49,7 +47,8 @@ def main():
 
     w = WorkspaceClient()
     text = args.resources.read_text()
-    report = check(w, yaml.safe_load(text)["resources"]["model_services"], args.probe_schema)
+    probe_schema = args.probe_schema or bundle_schema(args.target)
+    report = check(w, yaml.safe_load(text)["resources"]["model_services"], probe_schema)
 
     if report.upgrades:
         args.resources.write_text(apply_upgrades(text, report.upgrades))
@@ -60,6 +59,13 @@ def main():
     if "GITHUB_OUTPUT" in os.environ:
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             f.write(f"changed={'true' if report.upgrades else 'false'}\n")
+
+
+def bundle_schema(target: str | None) -> str:
+    """The catalog.schema a bundle target deploys to, as the Databricks CLI resolves it."""
+    command = ["databricks", "bundle", "validate", "-o", "json", *(["-t", target] if target else [])]
+    variables = json.loads(subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True).stdout)["variables"]
+    return f"{variables['catalog']['value']}.{variables['schema']['value']}"
 
 
 def check(w: WorkspaceClient, services: dict, probe_schema: str) -> Report:
@@ -129,8 +135,9 @@ def render(report: Report) -> str:
     else:
         lines.append("All model services are on the newest servable system.ai model.")
     if report.unservable:
-        lines += ["", "Skipped because they don't answer in this workspace yet:", ""]
-        lines += [f"- `{model}`: {error}" for model, error in report.unservable.items()]
+        # Names only: PRs on a public repo aren't masked like job logs, and the errors can name the workspace.
+        lines += ["", "Skipped because they don't answer in this workspace yet (errors are in the job log):", ""]
+        lines += [f"- `{model}`" for model in report.unservable]
     if report.untracked:
         lines += ["", "Not tracked:", ""]
         lines += [f"- `{key}`: {reason}" for key, reason in report.untracked.items()]

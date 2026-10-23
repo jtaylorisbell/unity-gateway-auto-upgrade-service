@@ -1,9 +1,8 @@
 # Unity Gateway model services, one per model class, each pinned to a system.ai model.
 # The check-models GitHub workflow opens a PR when a newer servable version is available; merging deploys it.
 #
-# Nothing workspace-specific lives in this repo. The workspace comes from DATABRICKS_CONFIG_PROFILE or
-# DATABRICKS_HOST, and the catalog and schema from BUNDLE_VAR_catalog and BUNDLE_VAR_schema. Locally they're in
-# .env (see .env.example); in CI they come from the GitHub environment's variables.
+# The workspace isn't in this repo. It comes from DATABRICKS_CONFIG_PROFILE in .env locally (see .env.example) and
+# from the GitHub environment's DATABRICKS_HOST secret in CI.
 bundle:
   name: unity_gateway_auto_upgrade
 
@@ -12,9 +11,9 @@ include:
 
 variables:
   catalog:
-    description: Catalog that holds the model services. Set with BUNDLE_VAR_catalog.
+    description: Catalog that holds the model services.
   schema:
-    description: Schema that holds the model services. Must already exist. Set with BUNDLE_VAR_schema.
+    description: Schema that holds the model services. Must already exist.
   grants:
     description: >-
       Grants on every model service, e.g. EXECUTE for the groups that should call them. This is the complete
@@ -26,11 +25,14 @@ variables:
     default: true
 
 targets:
-  # Personal sandbox. Model service names aren't prefixed in development mode, so use a schema of your own.
+  # Personal sandbox. Model service names aren't prefixed in development mode, so if someone else already deploys
+  # here, set BUNDLE_VAR_schema in your .env to a schema of your own.
   dev:
     mode: development
     default: true
     variables:
+      catalog: taylor
+      schema: managed_model_services_dev
       prevent_destroy: false
       grants:
         - principal: ${workspace.current_user.userName}
@@ -42,8 +44,11 @@ targets:
     workspace:
       root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
+      catalog: taylor
+      schema: managed_model_services_staging
+      # The CI service principal deploys, owns the services, and doesn't need a grant of its own.
       grants:
-        - principal: ${workspace.current_user.userName}
+        - principal: account users
           privileges: [EXECUTE]
 
   # Merges to main deploy here.
@@ -52,6 +57,9 @@ targets:
     workspace:
       root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
+      catalog: taylor
+      schema: managed_model_services_prod
+      # The CI service principal deploys, owns the services, and doesn't need a grant of its own.
       grants:
-        - principal: ${workspace.current_user.userName}
+        - principal: account users
           privileges: [EXECUTE]
