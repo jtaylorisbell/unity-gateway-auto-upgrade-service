@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write # GitHub OIDC token, exchanged for a Databricks token via workload identity federation
 
 jobs:
   test:
@@ -21,6 +20,8 @@ jobs:
 
   deploy:
     needs: test
+    # Pull requests from forks get no secrets, so they only run the tests.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'push' && 'prod' || 'staging' }}
     # One deploy per target at a time; PRs queue for staging and the last one deployed wins.
@@ -28,11 +29,11 @@ jobs:
       group: deploy-${{ github.event_name == 'push' && 'prod' || 'staging' }}
     env:
       TARGET: ${{ github.event_name == 'push' && 'prod' || 'staging' }}
-      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
-      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
-      DATABRICKS_AUTH_TYPE: github-oidc
-      BUNDLE_VAR_catalog: ${{ vars.CATALOG }}
-      BUNDLE_VAR_schema: ${{ vars.SCHEMA }}
+      # Secrets, not variables, so the values are masked in run logs, which are public on a public repo.
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+      DATABRICKS_AUTH_TYPE: oauth-m2m
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

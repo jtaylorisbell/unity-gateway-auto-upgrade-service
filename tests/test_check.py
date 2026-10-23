@@ -139,17 +139,40 @@ def test_main_rewrites_resources_and_reports_to_github(tmp_path, monkeypatch):
     resources.write_text(original.replace("databricks-claude-opus-5-5", "databricks-claude-opus-5"))
     output, summary = tmp_path / "github_output", tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
-    # The probe schema defaults to the bundle's, as in CI.
-    monkeypatch.setenv("BUNDLE_VAR_catalog", "cat")
-    monkeypatch.setenv("BUNDLE_VAR_schema", "sch")
+    # The probe schema defaults to the target's, as in CI.
+    targets = []
+    monkeypatch.setattr(check, "bundle_schema", lambda target: targets.append(target) or "cat.sch")
     monkeypatch.setattr(check, "WorkspaceClient", lambda: FakeWorkspace(unservable={"databricks-gpt-6-1-luna"}))
-    monkeypatch.setattr(sys, "argv", ["check-models", f"--resources={resources}", f"--summary-file={summary}"])
+    monkeypatch.setattr(
+        sys, "argv", ["check-models", "-t", "staging", f"--resources={resources}", f"--summary-file={summary}"]
+    )
 
     check.main()
 
+    assert targets == ["staging"]
     assert resources.read_text() == original
     assert output.read_text() == "changed=true\n"
     assert "| `opus` | `databricks-claude-opus-5` | `databricks-claude-opus-5-5` |" in summary.read_text()
+    assert "- `databricks-gpt-6-1-luna`\n" in summary.read_text()
+    assert "not available in your region" not in summary.read_text()
+
+
+def test_bundle_schema_reads_the_targets_variables(monkeypatch):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        variables = {"catalog": {"value": "cat"}, "schema": {"value": "sch_staging"}}
+        return SimpleNamespace(stdout=json.dumps({"variables": variables}))
+
+    monkeypatch.setattr(check.subprocess, "run", run)
+
+    assert check.bundle_schema("staging") == "cat.sch_staging"
+    assert check.bundle_schema(None) == "cat.sch_staging"
+    assert commands == [
+        ["databricks", "bundle", "validate", "-o", "json", "-t", "staging"],
+        ["databricks", "bundle", "validate", "-o", "json"],
+    ]
 
 
 def test_smoke_test_reports_services_that_do_not_answer(tmp_path, monkeypatch):

@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  id-token: write # GitHub OIDC token, exchanged for a Databricks token via workload identity federation
+  contents: write # push the bot/model-upgrades branch
+  pull-requests: write
 
 concurrency:
   group: check-models
@@ -18,36 +18,28 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     env:
-      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
-      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
-      DATABRICKS_AUTH_TYPE: github-oidc
-      # Probes go in the staging schema.
-      BUNDLE_VAR_catalog: ${{ vars.CATALOG }}
-      BUNDLE_VAR_schema: ${{ vars.SCHEMA }}
+      # Secrets, not variables, so the values are masked in run logs, which are public on a public repo.
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+      DATABRICKS_AUTH_TYPE: oauth-m2m
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - uses: databricks/setup-cli@main
 
       - name: Find newer servable models
         id: check
-        run: uv run check-models --summary-file "$RUNNER_TEMP/pr-body.md"
-
-      # PRs opened with the default GITHUB_TOKEN don't trigger other workflows, so deploy.yml wouldn't test them.
-      - name: Get a GitHub App token
-        if: steps.check.outputs.changed == 'true'
-        id: app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.MODEL_BOT_APP_ID }}
-          private-key: ${{ secrets.MODEL_BOT_PRIVATE_KEY }}
+        # Probes go in the staging schema.
+        run: uv run check-models -t staging --summary-file "$RUNNER_TEMP/pr-body.md"
 
       # Reuses one branch, so an unmerged PR gets updated instead of a new one opening every day.
-      # Reviewers come from .github/CODEOWNERS.
+      # Reviewers come from .github/CODEOWNERS. Because the PR is opened with the default GITHUB_TOKEN, its deploy.yml
+      # checks wait for someone with write access to click "Approve workflows to run" on the PR.
       - name: Open or update the PR
         if: steps.check.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ steps.app-token.outputs.token }}
           branch: bot/model-upgrades
           delete-branch: true
           add-paths: resources/model_services.yml
